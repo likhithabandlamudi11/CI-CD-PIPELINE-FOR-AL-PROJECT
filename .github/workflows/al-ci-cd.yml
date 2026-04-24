@@ -36,7 +36,11 @@ jobs:
             -containerName bcbuild `
             -auth UserPassword `
             -Credential $credential `
-            -updateHosts
+            -updateHosts `
+            -additionalParameters @(
+              "--volume $env:GITHUB_WORKSPACE:c:\sources",
+              "--volume $env:GITHUB_WORKSPACE\output:c:\output"
+            )
 
       - name: Compile AL
         shell: pwsh
@@ -46,8 +50,8 @@ jobs:
           Compile-AppInBcContainer `
             -containerName bcbuild `
             -credential $credential `
-            -appProjectFolder "$env:GITHUB_WORKSPACE" `
-            -appOutputFolder "$env:GITHUB_WORKSPACE/output"
+            -appProjectFolder "c:\sources" `
+            -appOutputFolder "c:\output"
 
       - name: Upload Artifact
         uses: actions/upload-artifact@v4
