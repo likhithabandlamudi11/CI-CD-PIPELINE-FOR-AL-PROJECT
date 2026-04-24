@@ -1,0 +1,56 @@
+name: AL CI-CD
+
+on:
+  push:
+    branches:
+      - develop
+
+jobs:
+  build:
+    runs-on: windows-latest
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Install BC Helper
+        shell: pwsh
+        run: |
+          Install-Module BcContainerHelper -Force -AllowClobber -Scope CurrentUser
+          Import-Module BcContainerHelper
+
+      - name: Get BC Artifact
+        shell: pwsh
+        run: |
+          $artifactUrl = Get-BcArtifactUrl -type Sandbox -country w1 -select Latest
+          echo "ARTIFACT_URL=$artifactUrl" >> $env:GITHUB_ENV
+
+      - name: Create Container
+        shell: pwsh
+        run: |
+          $credential = New-Object pscredential ('admin',(ConvertTo-SecureString 'P@ssword1' -AsPlainText -Force))
+
+          New-BcContainer `
+            -accept_eula `
+            -artifactUrl $env:ARTIFACT_URL `
+            -containerName bcbuild `
+            -auth UserPassword `
+            -Credential $credential `
+            -updateHosts
+
+      - name: Compile AL
+        shell: pwsh
+        run: |
+          $credential = New-Object pscredential ('admin',(ConvertTo-SecureString 'P@ssword1' -AsPlainText -Force))
+
+          Compile-AppInBcContainer `
+            -containerName bcbuild `
+            -credential $credential `
+            -appProjectFolder "$env:GITHUB_WORKSPACE" `
+            -appOutputFolder "$env:GITHUB_WORKSPACE/output"
+
+      - name: Upload Artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: al-app
+          path: output/*.app
