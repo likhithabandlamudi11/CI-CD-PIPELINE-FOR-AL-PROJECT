@@ -8,6 +8,8 @@ on:
 jobs:
   build:
     runs-on: windows-latest
+    env:
+      FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: true
 
     steps:
       - name: Checkout
@@ -25,6 +27,11 @@ jobs:
           $artifactUrl = Get-BcArtifactUrl -type Sandbox -country w1 -select Latest
           echo "ARTIFACT_URL=$artifactUrl" >> $env:GITHUB_ENV
 
+      - name: Create Output Folder
+        shell: pwsh
+        run: |
+          New-Item -ItemType Directory -Path "$env:GITHUB_WORKSPACE/output" -Force
+
       - name: Create Container
         shell: pwsh
         run: |
@@ -37,9 +44,8 @@ jobs:
             -auth UserPassword `
             -Credential $credential `
             -updateHosts `
-            -additionalParameters @(
-              "--volume $env:GITHUB_WORKSPACE:c:\sources",
-              "--volume $env:GITHUB_WORKSPACE\output:c:\output"
+            -dockerVolumes @(
+              "${env:GITHUB_WORKSPACE}:C:\Sources"
             )
 
       - name: Compile AL
@@ -50,11 +56,17 @@ jobs:
           Compile-AppInBcContainer `
             -containerName bcbuild `
             -credential $credential `
-            -appProjectFolder "c:\sources" `
-            -appOutputFolder "c:\output"
+            -appProjectFolder "C:\Sources" `
+            -appOutputFolder "C:\Sources\output"
 
       - name: Upload Artifact
         uses: actions/upload-artifact@v4
         with:
           name: al-app
           path: output/*.app
+
+      - name: Cleanup Container
+        if: always()
+        shell: pwsh
+        run: |
+          Remove-BcContainer -containerName bcbuild -force
