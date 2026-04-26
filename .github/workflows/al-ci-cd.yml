@@ -39,8 +39,6 @@ jobs:
       - name: Create BC Container
         shell: pwsh
         run: |
-          $workspace = $env:GITHUB_WORKSPACE
-
           $credential = New-Object pscredential ('admin',(ConvertTo-SecureString 'P@ssword1' -AsPlainText -Force))
 
           New-BcContainer `
@@ -49,11 +47,7 @@ jobs:
             -containerName bcbuild `
             -auth UserPassword `
             -Credential $credential `
-            -updateHosts `
-            -additionalParameters @(
-              "--volume ${workspace}:c:\sources",
-              "--volume ${workspace}\output:c:\output"
-            )
+            -updateHosts
 
       - name: Compile AL Extension
         shell: pwsh
@@ -63,8 +57,9 @@ jobs:
           Compile-AppInBcContainer `
             -containerName bcbuild `
             -credential $credential `
-            -appProjectFolder "c:\sources" `
-            -appOutputFolder "c:\output"
+            -appProjectFolder "$env:GITHUB_WORKSPACE" `
+            -appOutputFolder "$env:GITHUB_WORKSPACE/output" `
+            -copyToContainer
 
       - name: Upload Artifact
         uses: actions/upload-artifact@v4
