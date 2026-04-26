@@ -1,19 +1,28 @@
-name: AL CI-CD
+name: AL CI-CD Pipeline
 
 on:
   push:
     branches:
       - develop
+      - feature/*
+      - bugfix/*
 
 jobs:
+
+# ========================
+# BUILD JOB
+# ========================
   build:
     runs-on: windows-latest
-    env:
-      FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: true
 
     steps:
-      - name: Checkout
+      - name: Checkout Code
         uses: actions/checkout@v4
+
+      - name: Create Output Folder
+        shell: pwsh
+        run: |
+          New-Item -ItemType Directory -Force -Path "$env:GITHUB_WORKSPACE/output"
 
       - name: Install BC Helper
         shell: pwsh
@@ -27,12 +36,7 @@ jobs:
           $artifactUrl = Get-BcArtifactUrl -type Sandbox -country w1 -select Latest
           echo "ARTIFACT_URL=$artifactUrl" >> $env:GITHUB_ENV
 
-      - name: Create Output Folder
-        shell: pwsh
-        run: |
-          New-Item -ItemType Directory -Path "$env:GITHUB_WORKSPACE/output" -Force
-
-      - name: Create Container
+      - name: Create BC Container
         shell: pwsh
         run: |
           $credential = New-Object pscredential ('admin',(ConvertTo-SecureString 'P@ssword1' -AsPlainText -Force))
@@ -44,11 +48,12 @@ jobs:
             -auth UserPassword `
             -Credential $credential `
             -updateHosts `
-            -dockerVolumes @(
-              "${env:GITHUB_WORKSPACE}:C:\Sources"
+            -additionalParameters @(
+              "--volume $env:GITHUB_WORKSPACE:c:\sources",
+              "--volume $env:GITHUB_WORKSPACE\output:c:\output"
             )
 
-      - name: Compile AL
+      - name: Compile AL Extension
         shell: pwsh
         run: |
           $credential = New-Object pscredential ('admin',(ConvertTo-SecureString 'P@ssword1' -AsPlainText -Force))
@@ -56,8 +61,8 @@ jobs:
           Compile-AppInBcContainer `
             -containerName bcbuild `
             -credential $credential `
-            -appProjectFolder "C:\Sources" `
-            -appOutputFolder "C:\Sources\output"
+            -appProjectFolder "c:\sources" `
+            -appOutputFolder "c:\output"
 
       - name: Upload Artifact
         uses: actions/upload-artifact@v4
@@ -65,8 +70,53 @@ jobs:
           name: al-app
           path: output/*.app
 
-      - name: Cleanup Container
-        if: always()
+      # Optional cleanup (recommended)
+      - name: Remove Container
         shell: pwsh
         run: |
           Remove-BcContainer -containerName bcbuild -force
+
+# ========================
+# DEPLOY JOB
+# ========================
+  deploy:
+    needs: build
+    runs-on: windows-latest
+
+    # Run only for develop branch
+    if: github.ref == 'refs/heads/develop'
+
+    steps:
+      - name: Download Artifact
+        uses: actions/download-artifact@v4
+        with:
+          name: al-app
+
+      - name: Install BC Helper
+        shell: pwsh
+        run: |
+          Install-Module BcContainerHelper -Force -AllowClobber -Scope CurrentUser
+          Import-Module BcContainerHelper
+
+      - name: Deploy to Business Central
+        shell: pwsh
+        run: |
+          Write-Host "Deploying to Sandbox"
+
+          $authContext = New-BcAuthContext `
+            -clientId "${{ secrets.BC_CLIENT_ID }}" `
+            -clientSecret "${{ secrets.BC_CLIENT_SECRET }}" `
+            -tenantId "${{ secrets.BC_TENANT_ID }}"
+
+          $appFile = Get-Item "$env:GITHUB_WORKSPACE\*.app"
+
+          if (-not $appFile) {
+            throw "No .app file found!"
+          }
+
+          Publish-PerTenantExtensionApps `
+            -bcAuthContext $authContext `
+            -environment "Sandbox2" `
+            -appFile $appFile
+
+          Write-Host "Deployment completed"
