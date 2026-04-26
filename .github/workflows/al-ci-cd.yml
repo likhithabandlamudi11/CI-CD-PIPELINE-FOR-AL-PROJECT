@@ -9,6 +9,9 @@ on:
 
 jobs:
 
+# ========================
+# BUILD JOB
+# ========================
   build:
     runs-on: windows-latest
 
@@ -46,14 +49,24 @@ jobs:
             -Credential $credential `
             -updateHosts
 
+      # ✅ FIXED COPY STEP
       - name: Copy Source Into Container
         shell: pwsh
         run: |
+          $dest = "C:\ProgramData\BcContainerHelper\Extensions\bcbuild\mysource"
+
+          if (Test-Path $dest) {
+            Remove-Item -Recurse -Force $dest
+          }
+
+          New-Item -ItemType Directory -Path $dest
+
           Copy-Item `
             -Path "$env:GITHUB_WORKSPACE\*" `
-            -Destination "C:\ProgramData\BcContainerHelper\Extensions\bcbuild\mysource" `
+            -Destination $dest `
             -Recurse -Force
 
+      # ✅ FIXED COMPILE STEP
       - name: Compile AL Extension
         shell: pwsh
         run: |
@@ -65,6 +78,7 @@ jobs:
             -appProjectFolder "C:\ProgramData\BcContainerHelper\Extensions\bcbuild\mysource" `
             -appOutputFolder "C:\ProgramData\BcContainerHelper\Extensions\bcbuild\mysource\output"
 
+      # ✅ COPY OUTPUT BACK
       - name: Copy Output Back
         shell: pwsh
         run: |
@@ -85,9 +99,13 @@ jobs:
           Remove-BcContainer -containerName bcbuild -force
 
 
+# ========================
+# DEPLOY JOB
+# ========================
   deploy:
     needs: build
     runs-on: windows-latest
+
     if: github.ref == 'refs/heads/develop'
 
     steps:
@@ -105,6 +123,8 @@ jobs:
       - name: Deploy to Business Central
         shell: pwsh
         run: |
+          Write-Host "Deploying to Sandbox"
+
           $authContext = New-BcAuthContext `
             -clientId "${{ secrets.BC_CLIENT_ID }}" `
             -clientSecret "${{ secrets.BC_CLIENT_SECRET }}" `
@@ -120,3 +140,5 @@ jobs:
             -bcAuthContext $authContext `
             -environment "Sandbox2" `
             -appFile $appFile
+
+          Write-Host "Deployment completed"
